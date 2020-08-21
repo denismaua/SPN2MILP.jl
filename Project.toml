@@ -1,0 +1,8 @@
+name = "SPN2MILP"
+uuid = "ec1b1511-fa81-4b22-a300-7ea8ba6e9f7a"
+authors = ["denismaua <denis.maua@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Gurobi = "2e9cd046-0924-5485-92f1-d5272153d98b"
+SumProductNetworks = "5f6e642e-680c-5a9c-a175-7c23ed4da89e"
