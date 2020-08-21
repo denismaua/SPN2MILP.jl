@@ -7,6 +7,11 @@ const ADD = AlgebraicDecisionDiagrams
 const MLExpr = ADD.MultilinearExpression
 import Gurobi
 
+using SumProductNetworks
+import SumProductNetworks: 
+    Node, SumNode, ProductNode, LeafNode, CategoricalDistribution, IndicatorFunction, GaussianDistribution,
+    isleaf, isprod, issum
+
 """
     spn2milp(spn::SumProductNetwork)
 
