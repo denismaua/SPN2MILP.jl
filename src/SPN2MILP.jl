@@ -7,10 +7,13 @@ const ADD = AlgebraicDecisionDiagrams
 const MLExpr = ADD.MultilinearExpression
 import Gurobi
 
-using SumProductNetworks
-import SumProductNetworks: 
-    Node, SumNode, ProductNode, LeafNode, CategoricalDistribution, IndicatorFunction, GaussianDistribution,
-    isleaf, isprod, issum
+import SumProductNetworks
+const SPN = SumProductNetworks
+# import SumProductNetworks: 
+#     Node, SumNode, ProductNode, LeafNode, CategoricalDistribution, IndicatorFunction, GaussianDistribution,
+#     isleaf, isprod, issum, SumProductNetwork
+
+export spn2milp
 
 """
     spn2milp(spn::SumProductNetwork)
@@ -18,12 +21,12 @@ import SumProductNetworks:
 Translates sum-product network `spn` into MAP-equivalent mixed-integer linear program.
 Require that sum nodes have exactly two children.
 """
-function spn2milp(spn::SumProductNetwork, ordering::Union{Nothing,Array{<:Integer}}=nothing)    
+function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:Integer}}=nothing)    
     # obtain scope of every node
-    scopes = SumProductNetworks.scopes(spn)
+    scopes = SPN.scopes(spn)
     # Extract ADDs for each variable
     ## Colect ids of sum nodes
-    sumnodes = filter(i -> issum(spn[i]), 1:length(spn))
+    sumnodes = filter(i -> SPN.issum(spn[i]), 1:length(spn))
     ## Create a bucket for each sum node / latent variable
     buckets = Dict{Int,Array{ADD.DecisionDiagram{MLExpr}}}( i => [] for i in sumnodes ) 
     # TODO: Apply min-fill or min-degree heuristic to obtain better elimination ordering
@@ -46,7 +49,7 @@ function spn2milp(spn::SumProductNetwork, ordering::Union{Nothing,Array{<:Intege
 
     ## First obtain ADDs for manifest variables
     offset = 0 # offset to apply to variable indices at ADD leaves
-    vdims = SumProductNetworks.vardims(spn) # var id => no. of values
+    vdims = SPN.vardims(spn) # var id => no. of values
     for var in sort(scopes[1])
         # Extract ADD for variable var
         α = ADD.reduce(extractADD!(Dict{Int,ADD.DecisionDiagram{MLExpr}}(), spn, 1, var, scopes, offset))
@@ -215,16 +218,16 @@ end
 
 Extract algebraic decision diagram representing the distribution of a variable `var`, using a `cache` of ADDs and `scopes`.
 """
-function extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SumProductNetwork,node::Integer,var::Integer,scopes,offset)
+function extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SPN.SumProductNetwork,node::Integer,var::Integer,scopes,offset)
     if haskey(cache, node) return cache[node] end
-    if issum(spn[node])
+    if SPN.issum(spn[node])
         @assert length(spn[node].children) == 2
         low = extractADD!(cache,spn,spn[node].children[1],var,scopes,offset)
         high = extractADD!(cache,spn,spn[node].children[2],var,scopes,offset)
         γ = ADD.Node(Int(node),low,high)
         cache[node] = γ
         return γ
-    elseif isprod(spn[node])
+    elseif SPN.isprod(spn[node])
         for j in spn[node].children
             if var in scopes[j]
                 γ = extractADD!(cache,spn,j,var,scopes,offset)
@@ -232,13 +235,13 @@ function extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SumProduc
                 return γ
             end
         end        
-    elseif isa(spn[node], IndicatorFunction) # leaf
+    elseif isa(spn[node], SPN.IndicatorFunction) # leaf
         @assert spn[node].scope == var
         stride = convert(Int, offset + spn[node].value)
         γ = ADD.Terminal(MLExpr(1.0,stride))
         cache[node] = γ
         return γ
-    elseif isa(spn[node], CategoricalDistribution) # leaf
+    elseif isa(spn[node], SPN.CategoricalDistribution) # leaf
         @assert spn[node].scope == var
         expr = mapreduce(i -> MLE(spn[node].values[i], offset + i), +, 1:length(spn[node].values) )
         γ = ADD.Terminal(expr)

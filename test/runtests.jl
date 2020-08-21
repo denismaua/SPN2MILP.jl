@@ -1,14 +1,16 @@
 # Test SPN to MILP translation
 using Test
-using BenchmarkTools
+# using BenchmarkTools
 
-using SumProductNetworks
-import SumProductNetworks: SumNode, ProductNode, CategoricalDistribution, IndicatorFunction
+# ENV["GUROBI_HOME"] = "/Library/gurobi902/mac64"
 
-import SumProductNetworks.MAP: spn2milp
-using Gurobi
+using SPN2MILP
 
 @testset "SPN2MILP" begin
+    using SumProductNetworks
+    import SumProductNetworks: SumNode, ProductNode, CategoricalDistribution, IndicatorFunction
+    using Gurobi
+
     # SPN with dichotomic sum nodes (<= 2 children)
     SPN = SumProductNetwork(
         [
