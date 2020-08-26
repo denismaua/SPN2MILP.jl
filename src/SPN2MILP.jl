@@ -16,12 +16,12 @@ const SPN = SumProductNetworks
 export spn2milp
 
 """
-    spn2milp(spn::SumProductNetwork)
+    spn2milp(spn::SumProductNetwork, ordering, params)
 
 Translates sum-product network `spn` into MAP-equivalent mixed-integer linear program.
 Require that sum nodes have exactly two children.
 """
-function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:Integer}}=nothing)    
+function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:Integer}}=nothing, params::Union{Nothing,Dict{String,Any}}=nothing)    
     # obtain scope of every node
     scopes = SPN.scopes(spn)
     # Extract ADDs for each variable
@@ -32,7 +32,20 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:In
     # TODO: Apply min-fill or min-degree heuristic to obtain better elimination ordering
     # variable elimination sequence
     if isnothing(ordering) # if no ordering is given, obtain one
-        ordering = sort(sumnodes, rev=true) # eliminate bottom-most variables first
+        # ordering = sort(sumnodes, rev=true) # eliminate bottom-most variables first
+        # use depth-first order (assume tree-structure)
+        ordering = Int[]
+        stack = Int[ 1 ]
+        while !isempty(stack)
+            n = pop!(stack)
+            if SPN.issum(spn[n])
+                push!(ordering, n)
+            end
+            if !SPN.isleaf(spn[n])
+                append!(stack, spn[n].children)
+            end
+        end
+        reverse!(ordering)
     end
     @assert length(ordering) == length(sumnodes) 
     vorder = Dict{Int,Int}() # ordering of elimination of each variable (inverse mapping)
@@ -41,7 +54,12 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:In
     end
     # Create optimization model (interacts with Gurobi.jl)
     env = Gurobi.Env()
-    # TODO: allow passing of parameters to solve
+    # Allow passing of parameters to solve
+    if !isnothing(params)
+        for (param,value) in params
+            Gurobi.setparam!(env, param, value)
+        end
+    end
     # setparam!(env, "Method", 2)   # choose to use Barrier method
     # setparams!(env; IterationLimit=100, Method=1) # set the maximum iterations and choose to use Simplex method
      # creates an empty model ("milp" is the model name)
@@ -49,12 +67,12 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:In
 
     ## First obtain ADDs for manifest variables
     offset = 0 # offset to apply to variable indices at ADD leaves
+    # each optimization variable has index = offset + value
     vdims = SPN.vardims(spn) # var id => no. of values
     for var in sort(scopes[1])
         # Extract ADD for variable var
         α = ADD.reduce(extractADD!(Dict{Int,ADD.DecisionDiagram{MLExpr}}(), spn, 1, var, scopes, offset))
         # Create corresponding optimization variables for leaves (interacts with Gurobi)
-        # TODO: map optimization variables to spn variable assignment (var,value)
         # map(t -> begin
         #     # Gurobi.add_bvar!(model, 0.0)
         #     println("binary ", ADD.value(t))
@@ -66,12 +84,12 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:In
             Gurobi.add_bvar!(model, 0.0)
         end
         # add constraint (interacts with Gurobi)
-        # Gurobi.add_constr!(model, collect((offset+1):vdims[var]), '=', 1.0)
-        idx = collect((offset+1):(offset+vdims[var]))
-        coeff = ones(Float64, length(idx))
-        # print(idx, coeff)
+        # idx = collect((offset+1):(offset+vdims[var]))
+        # coeff = ones(Float64, length(idx))
         # syntax: variables ids, coefficients, comparison (<,>,=), right-hand side constant
-        Gurobi.add_constr!(model, idx, coeff, '=', 1.0)
+        ## Changed: this is to be done when reading query
+        # Gurobi.add_constr!(model, idx, coeff, '=', 1.0)
+        # Gurobi.add_sos!(model, :SOS1, idx, coeff)
         #
         offset += vdims[var] # update start index for next variable
         # # get index of bottom-most variable (highest id of a sum node)
@@ -102,7 +120,8 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:In
         # Generate corresponding variable and constraint (interacts with Gurobi)
         f = MLExpr(1.0,offset+1)  
         # syntax is model, coeefficient in objective, [lowerbound, upper bound]
-        Gurobi.add_cvar!(model, 0.0) # is it worth adding lower bounds? upper bounds?
+        # Gurobi.add_cvar!(model, 0.0) # is it worth adding lower bounds? upper bounds?
+        Gurobi.add_cvar!(model, 0.0, 0.0, 1.0) # is it worth adding lower bounds? upper bounds?
         offset += 1 # increase opt var counter
         # println("continuous ", f)
         idx = [offset] # indices of variables in constraint
@@ -140,7 +159,8 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Nothing,Array{<:In
     # Run variable elimination to generate constraints
     for i = 1:(length(ordering)-1)
         var = ordering[i] # variable to eliminate
-        printstyled("Eliminate: ", var, "\n"; color = :red)
+        print("[$i/$(length(ordering))] ")
+        printstyled("Eliminate: ", var, "\n"; color = :light_cyan)
         α = reduce(*, buckets[var]; init = ADD.Terminal(MLExpr(1.0)))
         α = ADD.marginalize(α, var)        
         # Obtain copy with modified leaves and generate constraints (interacts with JUMP / Gurobi)
@@ -217,6 +237,7 @@ end
     extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SumProductNetwork,node::Integer,var::Integer,scopes,offset)
 
 Extract algebraic decision diagram representing the distribution of a variable `var`, using a `cache` of ADDs and `scopes`.
+`offset` gives the starting index of variables at the leaves.
 """
 function extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SPN.SumProductNetwork,node::Integer,var::Integer,scopes,offset)
     if haskey(cache, node) return cache[node] end

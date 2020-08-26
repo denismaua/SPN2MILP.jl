@@ -1,4 +1,5 @@
 [deps]
+GraphicalModels = "a9c32ad1-b399-4167-82a9-e18baef426d8"
 Gurobi = "2e9cd046-0924-5485-92f1-d5272153d98b"
 SumProductNetworks = "a22f005f-d29d-4892-833e-0fc2359d1e90"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
