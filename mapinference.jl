@@ -1,6 +1,7 @@
 using SPN2MILP
 using SumProductNetworks
 import SumProductNetworks: vardims
+import SumProductNetworks.MAP: maxproduct!
 using Gurobi
 
 function run(spn_filename,q_filename, loadfromfile=false)
@@ -29,23 +30,23 @@ function run(spn_filename,q_filename, loadfromfile=false)
     # Gurobi parameters 
     params = Dict{String,Any}(
         # "IterationLimit" => 100, # Simplex iteration limit
-        "Method" => 1, # Algorithm used to solve continuous models (default: -1 -> automatic, 
+        "Method" => 3, # Algorithm used to solve continuous models (default: -1 -> automatic, 
                        #                                                0 -> primal simplex, 
                        #                                                1 -> dual simplex, 
                        #                                                2 -> barrier, 
                        #                                                3 -> concurrent, 
                        #                                                4 -> deterministic concurrent, 
                        #                                                5 -> deterministic concurrent simplex
-        # "TimeLimit" => 100,
+        "TimeLimit" => 100,
         "IntFeasTol" => 1e-9, # Integer feasibility tolerance (default: 1e-5, minimum: 1e-9, max: 1e-1)
         "BarConvTol" => 1e-8, # Barrier convergence tolerance (Default: 1e-8, min: 0, max: 1)
-        "OptimalityTol" => 1e-6, # Dual feasibility tolerance (default: 1e-6, min: 1e-9, max: 1e-2)
+        "OptimalityTol" => 1e-9, # Dual feasibility tolerance (default: 1e-6, min: 1e-9, max: 1e-2)
         "FeasibilityTol" => 1e-9, # Primal feasibility tolerance (default: 1e-6, min: 1e-9, max: 1e-2)
         "MIPGap" => 0, # Relative optimality gap (default: 1e-4, min: 0, max: Inf)
         "MIPGapAbs" => 0, # Absolute MIP optimality gap (default: 1e-10, min: 0, max: Inf)
         # "Heuristics" => 0.1, # Time spent in feasibility heuristics (default: 0.05, min: 0, max: 1)
         "MIPFocus" => 3, # MIP solver focus (default: 0 -> balanced, 1 -> find feasible solutions, 2 -> focus proving optimality, 3 -> focus on improving bound)
-        "Presolve" => 0, # Controls the presolve level (default: -1 -> automatic, 0 -> off, 1 -> conservative, 2 -> aggressive)
+        "Presolve" => 2, # Controls the presolve level (default: -1 -> automatic, 0 -> off, 1 -> conservative, 2 -> aggressive)
         # "FeasRelaxBigM" => 1e6, # Big-M value for feasibility relaxations (default: 1e6, min:0, max: Inf)
         "Quad" => 1, # Controls quad precision in simplex (default: -1 -> automatic, 0 -> off, 1 -> on)
         )
@@ -114,8 +115,19 @@ function run(spn_filename,q_filename, loadfromfile=false)
                 end
                 # println('x',optvar[(var,value)], '=', 1.0)
             end
-            # TODO: add MIP start from maxproduct solution or other
-            # Gurobi.set_dblattrelement!(model, "Start", idx, value)
+            # Run maxproduct to obtain initial solution
+            maxproduct!(x, spn, query);
+            printstyled("MaxProduct: "; color = :green)
+            println(spn(x))
+            for var in query
+                for value = 1:vdims[var]
+                    if x[var] == value
+                        Gurobi.set_dblattrelement!(model, "Start", optvar[(var,value)], 1.0)
+                    else
+                        Gurobi.set_dblattrelement!(model, "Start", optvar[(var,value)], 0.0)
+                    end
+                end
+            end
             # Alternatively, we can read a MIP start from file (MST) with Gurobi.read
             update_model!(model)
             # model2 = Gurobi.presolve_model(model)
@@ -132,10 +144,11 @@ function run(spn_filename,q_filename, loadfromfile=false)
                     for value = 1:vdims[var]
                         if sol[optvar[(var,value)]] ≈ 1.0
                             x[var] = value
-                            break
+                            # break
                         end
                     end
                 end
+                # println(x)
                 # for (k,v) in optvar
                 #     if sol[v] ≈ 1.0
                 #         x[k[1]] = k[2]
@@ -161,5 +174,6 @@ function run(spn_filename,q_filename, loadfromfile=false)
     nothing
 end
 
-run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
+run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
+# run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
 # run("/Users/denis/code/example.spn", "/Users/denis/code/example.map", true)
