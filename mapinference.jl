@@ -5,7 +5,7 @@ import SumProductNetworks.MAP: maxproduct!
 using Gurobi
 
 function run(spn_filename,q_filename, loadfromfile=false)
-    maxinstances = 10
+    maxinstances = 1
     println("SPN: ", spn_filename)
     println("Query: ", q_filename)
     println()
@@ -61,7 +61,7 @@ function run(spn_filename,q_filename, loadfromfile=false)
         timetaken = @elapsed Gurobi.read_model(model, spn_filename * ".mps")
     else
         # else, run variable elimination to generate milp model
-        timetaken = @elapsed model = spn2milp(spn, nothing, params)
+        timetaken = @elapsed model = spn2milp(spn, :deg, params)
         println("MILP model build in $(timetaken)s.")
         # Writing to file
         Gurobi.write_model(model, spn_filename * ".lp")
@@ -171,9 +171,9 @@ function run(spn_filename,q_filename, loadfromfile=false)
             model = basemodel
         end
     end
-    nothing
+    totaltime
 end
 
-run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
-# run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
+# run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
+run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
 # run("/Users/denis/code/example.spn", "/Users/denis/code/example.map", true)
