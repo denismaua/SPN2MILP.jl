@@ -175,5 +175,5 @@ function run(spn_filename,q_filename, loadfromfile=false)
 end
 
 # run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
-run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
+@time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
 # run("/Users/denis/code/example.spn", "/Users/denis/code/example.map", true)

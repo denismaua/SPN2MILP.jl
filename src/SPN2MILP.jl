@@ -169,7 +169,8 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
         i, id = minimum(n -> (vorder[ADD.index(n)],ADD.index(n)), Base.filter(n -> isa(n,ADD.Node), collect(α)))
         push!(buckets[id], α)
     end
-
+    # release pool of ADDs to be collected by garbage collector
+    potentials = nothing
     # To map each expression in a leaf into a fresh monomial
     cache = Dict{MLExpr,MLExpr}()
     bilinterms = Dict{ADD.Monomial,Int}()
@@ -220,17 +221,20 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
     end
     # Run variable elimination to generate constraints
     before = time_ns()
+    α = ADD.Terminal(MLExpr(1.0))
     for i = 1:(length(ordering)-1)
         var = ordering[i] # variable to eliminate
         print("[$i/$(length(ordering))] ")
         printstyled("Eliminate: ", var; color = :light_cyan)
-        α = reduce(*, buckets[var]; init = ADD.Terminal(MLExpr(1.0)))
+        α = α * reduce(*, buckets[var]; init = ADD.Terminal(MLExpr(1.0)))
+        empty!(buckets[var]) # allow used ADDs to be garbage collected
         α = ADD.marginalize(α, var)        
         # Obtain copy with modified leaves and generate constraints (interacts with JUMP / Gurobi)
-        β = ADD.apply(renameleaves, α)
+        α = ADD.apply(renameleaves, α)
+        # β = ADD.apply(renameleaves, α)
         # For path decomposition, add "message" to next bucket to be processed
         # printstyled("-> $(ordering[i+1])\n"; color = :green)     
-        push!(buckets[ordering[i+1]], β)
+        # push!(buckets[ordering[i+1]], β)
         # Create corresponding optimization variables for leaves (interacts with JUMP / Gurobi)
         # println(β)
         # Print out constraint
@@ -250,7 +254,7 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
         before = now
     end
     # Objective (last variable elimination)
-    α = reduce(*, buckets[ordering[end]]; init = ADD.Terminal(MLExpr(1.0)))
+    α = α * reduce(*, buckets[ordering[end]]; init = ADD.Terminal(MLExpr(1.0)))
     α = ADD.marginalize(α, ordering[end])
     @assert isa(α,ADD.Terminal)
     # Add equality constraint to represent objective
