@@ -536,8 +536,8 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
                 print("[$i/$(length(ordering))] ")
                 printstyled("Eliminated ", var; color = :light_cyan)      
                 printstyled(" [$(etime)s]\n"; color = :light_black)
+                before = now
             end
-            before = now
         end
     end
     # Objective (last variable elimination)
