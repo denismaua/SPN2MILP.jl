@@ -471,7 +471,7 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
         f = MLExpr(1.0,offset+1)  
         # syntax is model, coeefficient in objective, [lowerbound, upper bound]
         # Gurobi.add_cvar!(model, 0.0, 0.0, Inf) # is it worth adding lower bounds? upper bounds?
-        Gurobi.add_cvar!(model, 0.0, 0.0, 1.0) # is it worth adding lower bounds? upper bounds?
+        Gurobi.add_cvar!(model, 0.0, 0.0, multiplier) # is it worth adding lower bounds? upper bounds?
         offset += 1 # increase opt var counter
         # println("continuous ", f)
         idx = [offset] # indices of variables in constraint
@@ -497,7 +497,7 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
                 if haskey(bilinterms,m)
                     id = bilinterms[m] # id of w
                 else # add continuous variable w to problem with 0 ≤ w ≤ 1
-                    Gurobi.add_cvar!(model, 0.0, 0.0, 1.0) # add new variable representing bilinear term
+                    Gurobi.add_cvar!(model, 0.0, 0.0, multiplier) # add new variable representing bilinear term
                     offset += 1
                     id = offset # id of w
                     bilinterms[m] = id
@@ -559,7 +559,7 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
             if haskey(bilinterms,m)
                 id = bilinterms[m] # id of w
             else # add continuous variable w to problem with 0 ≤ w ≤ 1
-                Gurobi.add_cvar!(model, 0.0, 0.0, Inf) # add new variable representing bilinear term
+                Gurobi.add_cvar!(model, 0.0, 0.0, multiplier) # add new variable representing bilinear term
                 # Gurobi.add_cvar!(model, 0.0, 0.0, 1.0) # add new variable representing bilinear term
                 offset += 1
                 id = offset # id of w

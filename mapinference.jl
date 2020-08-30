@@ -4,14 +4,17 @@ import SumProductNetworks: vardims, project, project2
 import SumProductNetworks.MAP: maxproduct!
 using Gurobi
 
-function run(spn_filename,q_filename, loadfromfile=false)
-    maxinstances = 3
+function run(spn_filename,q_filename, multiplier=1.0, verbose=true, maxinstances=1, loadfromfile=false)
     println("SPN: ", spn_filename)
     println("Query: ", q_filename)
+    println("Multiplier: ", multiplier)
+    println("Verbose:", verbose)
+    println("Maximum instances: ", maxinstances)
     println()
     # Load SPN form file
     spn = SumProductNetwork(spn_filename; offset = 1)
-    println(summary(spn))
+    summary(spn)
+    println()
     # linear ordering of values of variables (≈ indicator nodes)
     # offset = 0
     # optvar = Dict{Tuple{Int,Int},Int}()
@@ -36,7 +39,7 @@ function run(spn_filename,q_filename, loadfromfile=false)
                        #                                                3 -> concurrent, 
                        #                                                4 -> deterministic concurrent, 
                        #                                                5 -> deterministic concurrent simplex
-        "TimeLimit" => 5000,
+        "TimeLimit" => 3600,
         "IntFeasTol" => 1e-9, # Integer feasibility tolerance (default: 1e-5, minimum: 1e-9, max: 1e-1)
         "BarConvTol" => 1e-22, # Barrier convergence tolerance (Default: 1e-8, min: 0, max: 1)
         "OptimalityTol" => 1e-9, # Dual feasibility tolerance (default: 1e-6, min: 1e-9, max: 1e-2)
@@ -47,7 +50,7 @@ function run(spn_filename,q_filename, loadfromfile=false)
         "MIPFocus" => 0, # MIP solver focus (default: 0 -> balanced, 1 -> find feasible solutions, 2 -> focus proving optimality, 3 -> focus on improving bound)
         "Presolve" => 2, # Controls the presolve level (default: -1 -> automatic, 0 -> off, 1 -> conservative, 2 -> aggressive)
         # "FeasRelaxBigM" => 1e6, # Big-M value for feasibility relaxations (default: 1e6, min:0, max: Inf)
-        "Quad" => 1, # Controls quad precision in simplex (default: -1 -> automatic, 0 -> off, 1 -> on)
+        "Quad" => -1, # Controls quad precision in simplex (default: -1 -> automatic, 0 -> off, 1 -> on)
         )
     # if loadfromfile && isfile(spn_filename * ".mps")
     #     # read it from file if it exists
@@ -103,8 +106,10 @@ function run(spn_filename,q_filename, loadfromfile=false)
             # spn2 = project(spn, union(query, keys(evidence)), x)
             spn2 = project2(spn, query, x)
             println(summary(spn2))
-            timetaken = @elapsed model = SPN2MILP.spn2milp_q(spn2, query, evidence, :deg, params, 100.)
+            timetaken = @elapsed model = SPN2MILP.spn2milp_q(spn2, query, evidence, :deg, params, multiplier, verbose)
             println("MILP model build in $(timetaken)s.")
+            # Write model to file
+            Gurobi.write_model(model, "$(spn_filename)-$(inst).mps")
             # for var in query
             #     # exactly one value must be selected:
             #     Gurobi.add_sos!(model, :SOS1, [ optvar[(var,value)] for value=1:vdims[var] ], ones(Float64,vdims[var]))
@@ -161,11 +166,15 @@ function run(spn_filename,q_filename, loadfromfile=false)
             # get status
             st = get_status(model)
             println("Status: $(st)")
+            Gurobi.write_model(model, "$(spn_filename)-$(inst).json")
             if st == :inf_or_unbd || st == :unbounded || st == :infeasible
                 @warn "Infeasible or unbounded program; could not extract a solution."
             else                                
                 # parse solution to extract MAP assignment                              
                 sol = get_solution(model)
+                # Write to file
+                # Gurobi.write_model(model, "$(spn_filename)-$(inst).sol")
+                Gurobi.write_model(model, "$(spn_filename)-$(inst).mst")
                 for var in query
                     for value = 1:vdims[var]
                         if sol[optvar[(var,value)]] ≈ 1.0
@@ -197,9 +206,19 @@ function run(spn_filename,q_filename, loadfromfile=false)
     totaltime
 end
 
-# @time run(ARGS[1], ARGS[2])
+# if length(ARGS) == 2
+#     @time run(ARGS[1], ARGS[2])
+# elseif length(ARGS) == 3
+#     @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]))
+# elseif length(ARGS) == 4
+#     @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]), parse(Bool, ARGS[4])) 
+# elseif length(ARGS) == 5
+#     @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]), parse(Bool, ARGS[4]), parse(Int, ARGS[5])) 
+# else
+#     println("Insufficient arguments.")
+# end
+# @time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map", 100., true)
 # run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
-# @time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
-@time run("/Users/denis/code/SPN/nltcs.spn2", "/Users/denis/code/SPN/nltcs_scenarios.map")
+@time run("/Users/denis/code/SPN/nltcs.spn2", "/Users/denis/code/SPN/nltcs_scenarios.map", 1000., true)
 # @time run("/Users/denis/code/SPN/molecular-biology_promoters.spn2", "/Users/denis/code/SPN/molecular-biology_promoters_scenarios.map")
 # run("/Users/denis/code/example.spn", "/Users/denis/code/example.map", true)
