@@ -35,7 +35,6 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
     sumnodes = filter(i -> SPN.issum(spn[i]), 1:length(spn))
     ## Create a bucket for each sum node / latent variable
     buckets = Dict{Int,Array{ADD.DecisionDiagram{MLExpr}}}( i => [] for i in sumnodes ) 
-
     # Create optimization model (interacts with Gurobi.jl)
     env = Gurobi.Env()
     # Allow passing of parameters to solve
@@ -44,8 +43,6 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
             Gurobi.setparam!(env, param, value)
         end
     end
-    # setparam!(env, "Method", 2)   # choose to use Barrier method
-    # setparams!(env; IterationLimit=100, Method=1) # set the maximum iterations and choose to use Simplex method
      # creates an empty model ("milp" is the model name)
     model = Gurobi.Model(env, "milp", :maximize)
     ## Domain graph
@@ -66,22 +63,7 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
             for i in sc
                 union!(graph[i],sc)
             end
-        end
-        # get (index of) bottom-most variable (highest id of a sum node)
-        # id = maximum(sc)  
-        # id = maximum(ADD.index, Base.filter(n -> isa(n,ADD.Node), collect(α)))  
-        # # get index of lowest variable according to elimination ordering
-        # i,id = minimum(n -> (vorder[ADD.index(n)],ADD.index(n)), Base.filter(n -> isa(n,ADD.Node), collect(α)))  
-        # @assert length(buckets[id]) == 0 # TODO iterate until finding an empty bucket      
-        # associate ADD to corresponding bucket
-        # push!(buckets[id], α)
-        # Create corresponding optimization variables for leaves (interacts with Gurobi)
-        # map(t -> begin
-        #     # Gurobi.add_bvar!(model, 0.0)
-        #     println("binary ", ADD.value(t))
-        #     end, 
-        #         Base.filter(n -> isa(n,ADD.Terminal), collect(α))
-        #     )              
+        end             
         for i=1:vdims[var]
             # syntax: model, coefficient in objective
             Gurobi.add_bvar!(model, 0.0)
@@ -141,7 +123,6 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
             @assert length(ordering) == length(sumnodes)
             reverse!(ordering)
         elseif ordering == :deg
-            # TODO: Apply min-fill or min-degree heuristic to obtain better elimination ordering
             ordering = Int[]
             sizehint!(ordering, length(sumnodes))
             while !isempty(graph)
@@ -184,7 +165,7 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
         end
         # Generate corresponding variable and constraint (interacts with Gurobi)
         f = MLExpr(1.0,offset+1)  
-        # syntax is model, coeefficient in objective, [lowerbound, upper bound]
+        # syntax is model, coefficient in objective, [lowerbound, upper bound]
         # Gurobi.add_cvar!(model, 0.0, 0.0, Inf) # is it worth adding lower bounds? upper bounds?
         Gurobi.add_cvar!(model, 0.0, 0.0, 1.0) # is it worth adding lower bounds? upper bounds?
         offset += 1 # increase opt var counter
@@ -239,24 +220,7 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
         empty!(buckets[var]) # allow used ADDs to be garbage collected
         α = ADD.marginalize(α, var)     
         # Obtain copy with modified leaves and generate constraints (interacts with JUMP / Gurobi)
-        α = ADD.apply(renameleaves, α)
-        # β = ADD.apply(renameleaves, α)
-        # For path decomposition, add "message" to next bucket to be processed
-        # printstyled("-> $(ordering[i+1])\n"; color = :green)     
-        # push!(buckets[ordering[i+1]], β)
-        # Create corresponding optimization variables for leaves (interacts with JUMP / Gurobi)
-        # println(β)
-        # Print out constraint
-        # ADD.apply(genconstraint, β, α)
-        # For standard bucket elimination (generates tree-decomposition)
-        # scope = Base.filter(n -> isa(n,ADD.Node), collect(α))
-        # if isempty(scope)
-        #     id = ordering[end]
-        # else
-        #     _, id = minimum(n -> (vorder[ADD.index(n)],ADD.index(n)), scope)  
-        # end   
-        # push!(buckets[id], β) 
-        # printstyled("-> $id\n"; color = :green)     
+        α = ADD.apply(renameleaves, α) 
         now = time_ns()
         etime = (now-before)/1e9
         printstyled(" [$(etime)s]\n"; color = :light_black)
@@ -282,7 +246,6 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
                 id = bilinterms[m] # id of w
             else # add continuous variable w to problem with 0 ≤ w ≤ 1
                 Gurobi.add_cvar!(model, 0.0, 0.0, Inf) # add new variable representing bilinear term
-                # Gurobi.add_cvar!(model, 0.0, 0.0, 1.0) # add new variable representing bilinear term
                 offset += 1
                 id = offset # id of w
                 bilinterms[m] = id
@@ -297,10 +260,8 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
         end        
         push!(coeff, c)
     end
-    # println(idx,' ', coeff)
     Gurobi.add_constr!(model, idx, multiplier * coeff, '=', 0.0)
     Gurobi.update_model!(model)
-    # ADD.value(α)
     model
 end
 
@@ -426,7 +387,6 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
             @assert length(ordering) == length(sumnodes)
             reverse!(ordering)
         elseif ordering == :deg
-            # TODO: Apply min-fill or min-degree heuristic to obtain better elimination ordering
             ordering = Int[]
             sizehint!(ordering, length(sumnodes))
             while !isempty(graph)
