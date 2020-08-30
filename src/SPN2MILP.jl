@@ -304,7 +304,7 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
     model
 end
 
-function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union{Symbol,Array{<:Integer}}=:dfs, params::Union{Nothing,Dict{String,Any}}=nothing, multiplier=1.0)    
+function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union{Symbol,Array{<:Integer}}=:dfs, params::Union{Nothing,Dict{String,Any}}=nothing, multiplier=1.0, verbose = false)    
     # obtain scope of every node
     scopes = SPN.scopes(spn)
     # Extract ADDs for each variable
@@ -329,7 +329,7 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
     # each optimization variable has index = offset + value
     vdims = SPN.vardims(spn) # var id => no. of values
     potentials = ADD.DecisionDiagram{MLExpr}[]
-    for var in sort(collect(query))
+    for var in sort!(collect(query))
         # Extract ADD for variable var
         α = ADD.reduce(extractADD!(Dict{Int,ADD.DecisionDiagram{MLExpr}}(), spn, 1, var, scopes, offset))
         # add it to pool
@@ -518,21 +518,27 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
         cache[e] = f
     end
     # Run variable elimination to generate constraints
-    before = time_ns()
+    if verbose 
+        before = time_ns()  
+    end
     α = ADD.Terminal(MLExpr(1.0))
     for i = 1:(length(ordering)-1)
         var = ordering[i] # variable to eliminate
-        print("[$i/$(length(ordering))] ")
-        printstyled("Eliminate: ", var; color = :light_cyan)
         α = α * reduce(*, buckets[var]; init = ADD.Terminal(MLExpr(1.0)))
         empty!(buckets[var]) # allow used ADDs to be garbage collected
         α = ADD.marginalize(α, var)     
         # Obtain copy with modified leaves and generate constraints (interacts with JUMP / Gurobi)
         α = ADD.apply(renameleaves, α)   
-        now = time_ns()
-        etime = (now-before)/1e9
-        printstyled(" [$(etime)s]\n"; color = :light_black)
-        before = now
+        if verbose
+            now = time_ns()
+            etime = (now-before)/1e9      
+            if etime > 60 # show every minute
+                print("[$i/$(length(ordering))] ")
+                printstyled("Eliminated ", var; color = :light_cyan)      
+                printstyled(" [$(etime)s]\n"; color = :light_black)
+            end
+            before = now
+        end
     end
     # Objective (last variable elimination)
     α = α * reduce(*, buckets[ordering[end]]; init = ADD.Terminal(MLExpr(1.0)))

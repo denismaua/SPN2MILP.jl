@@ -5,62 +5,38 @@ import SumProductNetworks.MAP: maxproduct!
 using Gurobi
 
 function run(spn_filename,q_filename, loadfromfile=false)
-    maxinstances = 1
+    maxinstances = 3
     println("SPN: ", spn_filename)
     println("Query: ", q_filename)
     println()
     # Load SPN form file
     spn = SumProductNetwork(spn_filename; offset = 1)
-    summary(spn)
-
-    # # scale weights to increase network's outputs (assume tree structure)
-    # C = 1.5
-    # frontier = Vector{Tuple{Int,Float64}}()
-    # push!(frontier, (1, C))
-    # while !isempty(frontier)
-    #     n, c = pop!(frontier)
-    #     if !SumProductNetworks.isleaf(spn[n])
-    #         recur = true
-    #         for (i,ch) in enumerate(spn[n].children)
-    #             if SumProductNetworks.isleaf(spn[ch])
-    #                 spn[n].weights .*= c
-    #                 recur = false
-    #                 break
-    #             end
-    #         end      
-    #         if recur
-    #             append!(frontier, (ch,c) for ch in spn[n].children)
-    #         end
-    #     elseif SumProductNetworks.isprod(spn[n])
-    #         append!(frontier, (ch,sqrt(c)) for ch in spn[n].children)
+    println(summary(spn))
+    # linear ordering of values of variables (≈ indicator nodes)
+    # offset = 0
+    # optvar = Dict{Tuple{Int,Int},Int}()
+    # for var in sort(collect(keys(vdims)))
+    #     for value = 1:vdims[var]
+    #         offset += 1
+    #         optvar[(var,value)] = offset
     #     end
     # end
-    # linear ordering of values of variables (≈ indicator nodes)
-    vdims = vardims(spn)
-    offset = 0
-    optvar = Dict{Tuple{Int,Int},Int}()
-    for var in sort(collect(keys(vdims)))
-        for value = 1:vdims[var]
-            offset += 1
-            optvar[(var,value)] = offset
-        end
-    end
     # println(optvar)
-    @assert length(optvar) == offset
+    # @assert length(optvar) == offset
     # to store solution
-    x = Array{Float64}(undef, length(vdims))
+    x = Array{Float64}(undef, length(scope(spn)))
     fill!(x, NaN)
     # Gurobi parameters 
     params = Dict{String,Any}(
         # "IterationLimit" => 100, # Simplex iteration limit
-        "Method" => 1, # Algorithm used to solve continuous models (default: -1 -> automatic, 
+        "Method" => -1, # Algorithm used to solve continuous models (default: -1 -> automatic, 
                        #                                                0 -> primal simplex, 
                        #                                                1 -> dual simplex, 
                        #                                                2 -> barrier, 
                        #                                                3 -> concurrent, 
                        #                                                4 -> deterministic concurrent, 
                        #                                                5 -> deterministic concurrent simplex
-        "TimeLimit" => 1000,
+        "TimeLimit" => 5000,
         "IntFeasTol" => 1e-9, # Integer feasibility tolerance (default: 1e-5, minimum: 1e-9, max: 1e-1)
         "BarConvTol" => 1e-22, # Barrier convergence tolerance (Default: 1e-8, min: 0, max: 1)
         "OptimalityTol" => 1e-9, # Dual feasibility tolerance (default: 1e-6, min: 1e-9, max: 1e-2)
@@ -69,7 +45,7 @@ function run(spn_filename,q_filename, loadfromfile=false)
         "MIPGapAbs" => 0, # Absolute MIP optimality gap (default: 1e-10, min: 0, max: Inf)
         # "Heuristics" => 0.1, # Time spent in feasibility heuristics (default: 0.05, min: 0, max: 1)
         "MIPFocus" => 0, # MIP solver focus (default: 0 -> balanced, 1 -> find feasible solutions, 2 -> focus proving optimality, 3 -> focus on improving bound)
-        "Presolve" => 0, # Controls the presolve level (default: -1 -> automatic, 0 -> off, 1 -> conservative, 2 -> aggressive)
+        "Presolve" => 2, # Controls the presolve level (default: -1 -> automatic, 0 -> off, 1 -> conservative, 2 -> aggressive)
         # "FeasRelaxBigM" => 1e6, # Big-M value for feasibility relaxations (default: 1e6, min:0, max: Inf)
         "Quad" => 1, # Controls quad precision in simplex (default: -1 -> automatic, 0 -> off, 1 -> on)
         )
@@ -121,13 +97,13 @@ function run(spn_filename,q_filename, loadfromfile=false)
                 # println(var, '=', value)
             end
             # Build specialized model
-            println("Query: ", query)
-            println("Marginalized: ", marg)
-            println("Evidence:", evidence)
+            # println("Query: ", query)
+            # println("Marginalized: ", marg)
+            # println("Evidence:", evidence)
             # spn2 = project(spn, union(query, keys(evidence)), x)
             spn2 = project2(spn, query, x)
-            summary(spn2)
-            timetaken = @elapsed model = SPN2MILP.spn2milp_q(spn2, query, evidence, :deg, params, 1.)
+            println(summary(spn2))
+            timetaken = @elapsed model = SPN2MILP.spn2milp_q(spn2, query, evidence, :deg, params, 100.)
             println("MILP model build in $(timetaken)s.")
             # for var in query
             #     # exactly one value must be selected:
@@ -151,18 +127,33 @@ function run(spn_filename,q_filename, loadfromfile=false)
             #     # println('x',optvar[(var,value)], '=', 1.0)
             # end
             # Run maxproduct to obtain initial solution
-            maxproduct!(x, spn, query);
+            maxproduct!(x, spn2, query);
             printstyled("MaxProduct: "; color = :green)
             println(spn(x))
-            # for var in query
-            #     for value = 1:vdims[var]
-            #         if x[var] == value
-            #             Gurobi.set_dblattrelement!(model, "Start", optvar[(var,value)], 1.0)
-            #         else
-            #             Gurobi.set_dblattrelement!(model, "Start", optvar[(var,value)], 0.0)
-            #         end
-            #     end
-            # end
+            vdims = vardims(spn2)
+            optvar = Dict{Tuple{Int,Int},Int}()
+            offset = 0
+            for var in sort!(collect(query))
+                for value = 1:vdims[var]
+                    offset += 1
+                    optvar[(var,value)] = offset
+                end
+            end 
+            for var in sort!(collect(keys(evidence)))
+                for value = 1:vdims[var]
+                    offset += 1
+                    optvar[(var,value)] = offset
+                end
+            end             
+            for var in query
+                for value = 1:vdims[var]
+                    if x[var] == value
+                        Gurobi.set_dblattrelement!(model, "Start", optvar[(var,value)], 1.0)
+                    else
+                        Gurobi.set_dblattrelement!(model, "Start", optvar[(var,value)], 0.0)
+                    end
+                end
+            end
             # Alternatively, we can read a MIP start from file (MST) with Gurobi.read
             update_model!(model)
             # model2 = Gurobi.presolve_model(model)
@@ -172,8 +163,8 @@ function run(spn_filename,q_filename, loadfromfile=false)
             println("Status: $(st)")
             if st == :inf_or_unbd || st == :unbounded || st == :infeasible
                 @warn "Infeasible or unbounded program; could not extract a solution."
-            else                
-                # parse solution to extract MAP assignment
+            else                                
+                # parse solution to extract MAP assignment                              
                 sol = get_solution(model)
                 for var in query
                     for value = 1:vdims[var]
@@ -183,19 +174,16 @@ function run(spn_filename,q_filename, loadfromfile=false)
                         end
                     end
                 end
-                # println(x)
-                # for (k,v) in optvar
-                #     if sol[v] ≈ 1.0
-                #         x[k[1]] = k[2]
-                #     end
-                # end
-                println("Solution value: ", spn(x))
+                printstyled("Solution value: "; color = :light_cyan)
+                println(spn(x))
                 # show obj value
                 obj = get_objval(model)
-                println("Objective: ", obj)
+                printstyled("Objective: "; color = :light_cyan)
+                println(obj)
                 # show obj bound
                 bound = Gurobi.get_objbound(model)
-                println("Upper bound: ", bound)
+                printstyled("Upper bound: "; color = :light_cyan)
+                println(bound)
             end
             inst += 1
             # if maximum no. of instances is reached, stop
@@ -209,7 +197,9 @@ function run(spn_filename,q_filename, loadfromfile=false)
     totaltime
 end
 
+# @time run(ARGS[1], ARGS[2])
 # run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
-@time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
+# @time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map")
+@time run("/Users/denis/code/SPN/nltcs.spn2", "/Users/denis/code/SPN/nltcs_scenarios.map")
 # @time run("/Users/denis/code/SPN/molecular-biology_promoters.spn2", "/Users/denis/code/SPN/molecular-biology_promoters_scenarios.map")
 # run("/Users/denis/code/example.spn", "/Users/denis/code/example.map", true)
