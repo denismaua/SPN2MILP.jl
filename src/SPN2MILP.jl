@@ -28,6 +28,8 @@ Require that sum nodes have exactly two children.
 - `multipler`: scaling constant for improving numerical precision when dealing with small numbers (default: 1.0). 
 """
 function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Integer}}=:dfs, params::Union{Nothing,Dict{String,Any}}=nothing, multiplier=1.0, query=nothing)    
+    # ensure nodes have at most 2 children
+    SPN.binarize!(spn)
     # obtain scope of every node
     scopes = SPN.scopes(spn)
     # Extract ADDs for each variable
@@ -266,6 +268,8 @@ function spn2milp(spn::SPN.SumProductNetwork, ordering::Union{Symbol,Array{<:Int
 end
 
 function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union{Symbol,Array{<:Integer}}=:dfs, params::Union{Nothing,Dict{String,Any}}=nothing, multiplier=1.0, verbose = false)    
+    # ensure nodes have at most 2 children
+    SPN.binarize!(spn)
     # obtain scope of every node
     scopes = SPN.scopes(spn)
     # Extract ADDs for each variable
