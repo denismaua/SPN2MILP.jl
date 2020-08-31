@@ -290,8 +290,9 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
     # each optimization variable has index = offset + value
     vdims = SPN.vardims(spn) # var id => no. of values
     potentials = ADD.DecisionDiagram{MLExpr}[]
-    for var in sort!(collect(query))
-        # Extract ADD for variable var
+    # for var in sort!(collect(query) ∩ scopes[1])
+    for var in sort!(collect(query) ∩ scopes[1])
+            # Extract ADD for variable var
         α = ADD.reduce(extractADD!(Dict{Int,ADD.DecisionDiagram{MLExpr}}(), spn, 1, var, scopes, offset))
         # add it to pool
         push!(potentials, α)
@@ -312,7 +313,7 @@ function spn2milp_q(spn::SPN.SumProductNetwork, query, evidence, ordering::Union
         Gurobi.add_sos!(model, :SOS1, idx, coeff)
         offset += vdims[var] # update start index for next variable
     end
-    for var in sort!(collect(keys(evidence)))
+    for var in sort!(collect(keys(evidence)) ∩ scopes[1])
         # Extract ADD for variable var
         α = ADD.reduce(extractADD!(Dict{Int,ADD.DecisionDiagram{MLExpr}}(), spn, 1, var, scopes, offset))
         # add it to pool
@@ -564,9 +565,9 @@ function extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SPN.SumPr
                 return γ
             end
         end
+        error("$var is not in node $(node)'s scope. $(scopes[node])")
         cache[node] = ADD.Terminal(MLExpr(1.0))
         return cache[node]
-        # error("$var is not in node $(node)'s scope. $(scopes[node])")
     elseif isa(spn[node], SPN.IndicatorFunction) # leaf
         @assert spn[node].scope == var
         stride = convert(Int, offset + spn[node].value)
@@ -583,6 +584,41 @@ function extractADD!(cache::Dict{Int,ADD.DecisionDiagram{MLExpr}},spn::SPN.SumPr
         @error "Unsupported node type: $(typeof(spn[node]))."
     end
     @error "Reached end of cases, something went wrong."
+end
+
+"Computes the number of sum nodes at subnetwork for each node in the network."
+function nsums!(count::AbstractVector{<:Integer}, spn::SPN.SumProductNetwork)
+    for i = length(spn):-1:1
+        node = spn[i]
+        if SPN.isleaf(node)
+            count[i] = 0
+        elseif SPN.isprod(node)
+            count[i] = sum(j -> count[j], node.children)
+        else # sum node
+            count[i] = sum(j -> count[j], node.children) + 1
+        end
+    end
+end
+
+"Extract subnetworks with at most `maxsize` sum nodes."
+function extractSPNs(count::AbstractVector{<:Integer}, spn::SPN.SumProductNetwork, maxsize::Integer)
+    stack = UInt[ 1 ]
+    roots = UInt[]
+    # find roots of small subnetworks
+    while !isempty(stack)         
+        n = pop!(stack)
+        if count[n] > maxsize || SPN.isprod(spn[n])
+            append!(stack, n.children)
+        elseif SPN.issum(spn[n])
+            push!(roots, n)
+        end
+    end
+    # collect subnetworks
+    subnets = SPN.SumProductNetwork[]
+    for root in roots
+        push!(subnets, SPN.subnetwork(spn, root))
+    end
+    subnets
 end
 
 end # module

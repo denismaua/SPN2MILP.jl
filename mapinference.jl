@@ -4,11 +4,12 @@ import SumProductNetworks: vardims, project, project2
 import SumProductNetworks.MAP: maxproduct!
 using Gurobi
 
-function run(spn_filename,q_filename, multiplier=1.0, verbose=true, maxinstances=1, loadfromfile=false)
+"Exact inference"
+function run(spn_filename, q_filename, multiplier=1.0, maxinstances=1, verbose=true, loadfromfile=false)
     println("SPN: ", spn_filename)
     println("Query: ", q_filename)
     println("Multiplier: ", multiplier)
-    println("Verbose:", verbose)
+    println("Verbose: ", verbose)
     println("Maximum instances: ", maxinstances)
     println()
     # Load SPN form file
@@ -100,12 +101,12 @@ function run(spn_filename,q_filename, multiplier=1.0, verbose=true, maxinstances
                 evidence[var] = value
                 # println(var, '=', value)
             end
-            # Build specialized model
+            # Build specialized model (remove marginalized variables)
             # println("Query: ", query)
             # println("Marginalized: ", marg)
             # println("Evidence:", evidence)
-            # spn2 = project(spn, union(query, keys(evidence)), x)
-            spn2 = project2(spn, query, x)
+            spn2 = project(spn, union(query, keys(evidence)), x)
+            # spn2 = project(spn, query, x)
             println(summary(spn2))
             timetaken = @elapsed model = SPN2MILP.spn2milp_q(spn2, query, evidence, :deg, params, multiplier, verbose)
             println("MILP model build in $(timetaken)s.")
@@ -139,20 +140,21 @@ function run(spn_filename,q_filename, multiplier=1.0, verbose=true, maxinstances
             vdims = vardims(spn2)
             optvar = Dict{Tuple{Int,Int},Int}()
             offset = 0
-            for var in sort!(collect(query))
+            sc = scope(spn2)
+            for var in sort!(collect(query) ∩ sc)
                 for value = 1:vdims[var]
                     offset += 1
                     optvar[(var,value)] = offset
                 end
             end 
-            for var in sort!(collect(keys(evidence)))
+            for var in sort!(collect(keys(evidence)) ∩ sc)
                 for value = 1:vdims[var]
                     offset += 1
                     optvar[(var,value)] = offset
                 end
             end             
             # Set MIP Start solution
-            for var in query
+            for var in query ∩ sc
                 Gurobi.set_dblattrelement!(model, "Start", optvar[(var,x[var])], 1.0)
                 # for value = 1:vdims[var]
                 #     if x[var] == value
@@ -178,7 +180,7 @@ function run(spn_filename,q_filename, multiplier=1.0, verbose=true, maxinstances
                 # Write to file
                 # Gurobi.write_model(model, "$(spn_filename)-$(inst).sol")
                 Gurobi.write_model(model, "$(spn_filename)-$(inst).mst")
-                for var in query
+                for var in query ∩ sc
                     for value = 1:vdims[var]
                         if sol[optvar[(var,value)]] ≈ 1.0
                             x[var] = value
@@ -209,20 +211,20 @@ function run(spn_filename,q_filename, multiplier=1.0, verbose=true, maxinstances
     totaltime
 end
 
-# if length(ARGS) == 2
-#     @time run(ARGS[1], ARGS[2])
-# elseif length(ARGS) == 3
-#     @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]))
-# elseif length(ARGS) == 4
-#     @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]), parse(Bool, ARGS[4])) 
-# elseif length(ARGS) == 5
-#     @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]), parse(Bool, ARGS[4]), parse(Int, ARGS[5])) 
-# else
-#     println("Insufficient arguments.")
-# end
-# @time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map", 100., true)
+if length(ARGS) == 2
+    @time run(ARGS[1], ARGS[2])
+elseif length(ARGS) == 3
+    @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]))
+elseif length(ARGS) == 4
+    @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]), parse(Int, ARGS[4])) 
+elseif length(ARGS) == 5
+    @time run(ARGS[1], ARGS[2], parse(Float64, ARGS[3]), parse(Int, ARGS[4]), parse(Bool, ARGS[5])) 
+else
+    println("Insufficient arguments.")
+end
+# @time run("/Users/denis/code/SPN/spambase.spn2", "/Users/denis/code/SPN/spambase.map", 100., 1, true)
 # run("/Users/denis/code/SPN/mushrooms.spn2", "/Users/denis/code/SPN/mushrooms_scenarios.map")
 # run("/Users/denis/code/SPN/dna.spn2", "/Users/denis/code/SPN/dna.map")
-# @time run("/Users/denis/code/SPN/nltcs.spn2", "/Users/denis/code/SPN/nltcs_scenarios.map", 100000., true)
-# @time run("/Users/denis/code/SPN/molecular-biology_promoters.spn2", "/Users/denis/code/SPN/molecular-biology_promoters_scenarios.map", 1e20, true)
-# run("/Users/denis/code/example.spn", "/Users/denis/code/example.map", true)
+# @time run("/Users/denis/code/SPN/nltcs.spn2", "/Users/denis/code/SPN/nltcs_scenarios.map", 100000., 1, true)
+# @time run("/Users/denis/code/SPN/molecular-biology_promoters.spn2", "/Users/denis/code/SPN/molecular-biology_promoters_scenarios.map", 1e20, 1, true)
+# run("/Users/denis/code/example.spn", "/Users/denis/code/example.map")
